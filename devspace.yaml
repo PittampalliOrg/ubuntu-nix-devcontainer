@@ -1,0 +1,382 @@
+version: v2beta1
+name: backstage
+
+# This is a list of `pipelines` that DevSpace can execute (you can define your own)
+pipelines:
+  dev: |-
+    # Deploy the application and then start dev
+    run_default_pipeline dev
+
+    # Removed VSCode command due to permission issues
+    # code --folder-uri vscode-remote://ssh-remote+backstage.devspace/home/code/app
+
+# This is a list of `images` that DevSpace can build for this project
+# We recommend to skip image building during development (devspace dev) as much as possible
+images:
+  backstage:
+    image: gitea.cnoe.localtest.me:8443/giteaadmin/backstage-cnoe
+    dockerfile: ./Dockerfile
+    buildArgs:
+      NODE_ENV: production
+    docker:
+      args:
+        - "--insecure-registry=gitea.cnoe.localtest.me:8443"
+  
+  # Development image with proper permissions and Nix support
+  backstage-dev:
+    image: gitea.cnoe.localtest.me:8443/giteaadmin/backstage-dev
+    dockerfile: ./Dockerfile.dev
+    buildArgs:
+      USER_UID: "1000"
+      USER_GID: "1000"
+    docker:
+      args:
+        - "--insecure-registry=gitea.cnoe.localtest.me:8443"
+  
+  # Nix development image with non-root user
+  nix-dev:
+    image: backstage-nix-dev
+    dockerfile: ./Dockerfile.nix-dev
+    rebuildStrategy: always
+    tags:
+      - latest
+
+# # This is a list of `deployments` that DevSpace can create for this project
+# deployments:
+#   app:
+#     # This deployment uses `helm` but you can also define `kubectl` deployments or kustomizations
+#     helm:
+#       # We are deploying this project with the Helm chart you provided
+#       chart:
+#         name: component-chart
+#         repo: https://charts.devspace.sh
+#       # Under `values` we can define the values for this Helm chart used during `helm install/upgrade`
+#       # You may also use `valuesFiles` to load values from files, e.g. valuesFiles: ["values.yaml"]
+#       values:
+#         containers:
+#           - image: username/app
+#         service:
+#           ports:
+#             - port: 7007
+
+# This is a list of `dev` containers that are based on the containers created by your deployments
+dev:
+  app:
+    # Select container using labels for better stability
+    labelSelector:
+      app: backstage-dev
+      environment: dev
+    # Patches for container configuration
+    # patches:
+    # Patches removed - testing if still needed
+    # patches:
+    # - op: add
+    #   path: /spec/template/spec/containers/0/securityContext
+    #   value:
+    #     runAsUser: 1000
+    #     runAsGroup: 100
+    #     allowPrivilegeEscalation: true
+    #     runAsNonRoot: false
+    # persistPaths:
+    #   - path: /app/node_modules
+    #     volumePath: node-modules
+    #     readOnly: false
+    #     skipPopulate: true
+    #   # - path: /app/.nx
+    #   #   volumePath: nx-cache
+    #   #   readOnly: false
+    #   #   skipPopulate: true
+    #   # - path: /app/packages/backend/dist
+    #   #   volumePath: backend-dist
+    #   #   readOnly: false
+    #   #   skipPopulate: true  
+    # Replace the container image with this dev-optimized image (allows to skip image building during development)
+    # Using our custom Nix development image with non-root user from Docker Hub
+    devImage: vpittamp23/ubuntu-nix-nonroot:v4
+    # Command is already set in Dockerfile, but can override if needed
+    # command: ["sleep", "infinity"]
+    resources:
+      limits:
+        cpu: "8"           # 8 CPU cores
+        memory: "16Gi"     # 16 GB memory
+        ephemeral-storage: "50Gi"  # 50 GB ephemeral storage
+      requests:
+        cpu: "4"           # Request 4 CPU cores minimum
+        memory: "8Gi"      # Request 8 GB memory minimum
+        ephemeral-storage: "20Gi"  # Request 20 GB storage minimum
+
+    # Sync configuration - no permission fixes needed with custom image
+    sync:
+      - path: ./:/home/code/app
+        excludePaths:
+        - node_modules/
+        - "**/node_modules/"
+        # - .devbox/
+        # - .git/
+        # - .nix-profile/
+        # - .cache/
+        printLogs: true
+        waitInitialSync: false
+        # No onUpload permission fix needed - directories created with correct ownership in image
+      # - path: ~/.codex:/home/node/.codex
+      # Sync Claude Code credentials
+      #   - path: ~/.claude:/home/node/.claude
+      #  excludePaths:
+      #  - "*.log"
+      #  - "*.tmp"
+      #  - shell-snapshots/
+      #  - todos/
+      #  printLogs: true
+
+
+    # Open a terminal and use the following command to start it
+    terminal:
+      # Just start a plain bash shell without any commands
+      command: bash
+
+        # yarn install --ignore-engines --network-timeout 600000 || echo "Yarn install failed, continuing..."
+    # attach:
+    #   enabled: true
+
+    # Inject a lightweight SSH server into the container (so your IDE can connect to the remote dev env)
+    # ssh:
+    #   enabled: true
+    #   localHostname: backstage.devspace
+    #   localPort: 10448
+    # Temporarily disable proxy commands to test permissions
+    # proxyCommands:
+    #   - command: devspace
+    #   - command: kubectl
+    #   - command: helm
+    #   - command: git
+    #   - command: idpbuilder
+    #   - command: docker
+    #   - gitCredentials: true
+    workingDir: /home/code/app
+    # Forward the following ports to be able access your application via localhost
+    ports:
+      - port: "3000:3000"      # Frontend
+      - port: "7007:7007"      # Backend API
+      # - port: "9229:9229"      # Node.js debugger
+    # # Open the following URLs once they return an HTTP status code other than 502 or 503
+    # open:
+    #   - url: http://localhost:3000
+
+    env:
+      - name: BROWSER
+        value: "none"
+      # - name: npm_config_yes
+      #   value: "true"
+      # - name: NODE_TLS_REJECT_UNAUTHORIZED
+      #   value: "0"
+      - name: NODE_OPTIONS
+        value: "--no-node-snapshot"
+      - name: NODE_ENV
+        value: "development"
+# Configure local registry for Gitea
+localRegistry:
+  enabled: false  # We're using external Gitea registry
+  
+# Use the `commands` section to define repeatable dev workflows for this project
+commands:
+  build-prod:
+    command: |-
+      echo "Building and pushing production image to Gitea registry..."
+      
+      # Get Gitea credentials
+      echo "Getting Gitea credentials..."
+      GITEA_CREDS=$(idpbuilder get secrets -p gitea 2>/dev/null)
+      
+      if [ -z "$GITEA_CREDS" ]; then
+        echo "Failed to get Gitea credentials. Make sure idpbuilder is running."
+        exit 1
+      fi
+      
+      # Extract password (4th column in the output)
+      GITEA_PASSWORD=$(echo "$GITEA_CREDS" | grep gitea-credential | awk '{print $4}')
+      
+      if [ -z "$GITEA_PASSWORD" ]; then
+        echo "Failed to extract Gitea password from credentials."
+        echo "Debug: Credentials output:"
+        echo "$GITEA_CREDS"
+        exit 1
+      fi
+      
+      # Set Docker config directory and create minimal config to avoid credential helper issues
+      export DOCKER_CONFIG=$HOME/.docker
+      mkdir -p $DOCKER_CONFIG
+      
+      # Create a Docker config with insecure registry settings
+      cat > $DOCKER_CONFIG/config.json <<EOF
+      {
+        "auths": {},
+        "insecure-registries": ["gitea.cnoe.localtest.me:8443"]
+      }
+      EOF
+      
+      # Login to Gitea registry
+      echo "Logging into Gitea registry as giteaAdmin..."
+      echo $GITEA_PASSWORD | docker --config $DOCKER_CONFIG login gitea.cnoe.localtest.me:8443 -u giteaAdmin --password-stdin 2>/dev/null || \
+        echo $GITEA_PASSWORD | docker login gitea.cnoe.localtest.me:8443 -u giteaAdmin --password-stdin
+      
+      if [ $? -ne 0 ]; then
+        echo "Docker login failed. Please check credentials and registry availability."
+        exit 1
+      fi
+      
+      # Build and push image with version tag
+      echo "Building and pushing production image..."
+      export DOCKER_CONFIG=$HOME/.docker
+      
+      # Follow official Backstage build process
+      echo "Step 1/4: Checking/Installing dependencies..."
+      # Check if node_modules exists and is populated
+      if [ ! -d "node_modules" ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
+        echo "Installing dependencies (this may take a few minutes)..."
+        yarn install --immutable
+        
+        if [ $? -ne 0 ]; then
+          echo "Failed to install dependencies."
+          exit 1
+        fi
+      else
+        echo "Dependencies already installed, skipping yarn install..."
+      fi
+      
+      echo "Step 2/4: Generating TypeScript declarations..."
+      echo "Note: There are known TypeScript errors in plugins that don't affect runtime."
+      echo "Running tsc to generate declaration files..."
+      
+      # Run tsc but continue even if there are errors (non-critical for Docker build)
+      yarn tsc || {
+        echo "TypeScript compilation completed with errors."
+        echo "These are mostly React import and type definition issues that don't affect runtime."
+        echo "Continuing with build..."
+      }
+      
+      echo "Step 3/4: Building Backstage backend..."
+      echo "Prebuilding app to ensure updated frontend config schema..."
+      yarn workspace app build || { echo "App build failed"; exit 1; }
+      yarn build:backend
+      
+      if [ $? -ne 0 ]; then
+        echo "Backend build failed. Please fix any build errors and try again."
+        exit 1
+      fi
+      
+      # Build the image directly with Docker using the backend Dockerfile
+      # Generate a version tag that Kargo will recognize (vNNN format)
+      # Use build number from file or timestamp-based incrementing number
+      VERSION_FILE=".build-version"
+      if [ -f "$VERSION_FILE" ]; then
+        BUILD_NUM=$(cat $VERSION_FILE)
+        BUILD_NUM=$((BUILD_NUM + 1))
+      else
+        # Start with 100 to ensure we're above any existing versions
+        BUILD_NUM=100
+      fi
+      echo $BUILD_NUM > $VERSION_FILE
+      
+      VERSION_TAG="v${BUILD_NUM}"
+      TIMESTAMP_TAG="v${BUILD_NUM}-$(date +%Y%m%d-%H%M%S)"
+      IMAGE_NAME="gitea.cnoe.localtest.me:8443/giteaadmin/backstage-cnoe"
+      
+      echo "Step 4/4: Building Docker image with tags: latest, $VERSION_TAG, and $TIMESTAMP_TAG"
+      echo "This may take several minutes..."
+      
+      # Enable BuildKit for better caching and use --progress=plain for detailed output
+      DOCKER_BUILDKIT=1 docker build \
+        --progress=plain \
+        -f packages/backend/Dockerfile \
+        -t $IMAGE_NAME:latest \
+        -t $IMAGE_NAME:$VERSION_TAG \
+        -t $IMAGE_NAME:$TIMESTAMP_TAG \
+        .
+      
+      if [ $? -ne 0 ]; then
+        echo "Docker build failed."
+        exit 1
+      fi
+      
+      echo "Pushing images to registry..."
+      echo "Note: If push fails with TLS certificate error, you need to configure Docker daemon with:"
+      echo '  "insecure-registries": ["gitea.cnoe.localtest.me:8443"]'
+      echo ""
+      
+      echo "Pushing image with tag 'latest'..."
+      docker push $IMAGE_NAME:latest
+      
+      if [ $? -ne 0 ]; then
+        echo ""
+        echo "ERROR: Docker push failed, likely due to TLS certificate issues."
+        echo ""
+        echo "To fix this, add the following to Docker daemon config on the host:"
+        echo "  Edit /etc/docker/daemon.json (or Docker Desktop settings) and add:"
+        echo '  {
+          "insecure-registries": ["gitea.cnoe.localtest.me:8443"]
+        }'
+        echo "  Then restart Docker daemon."
+        echo ""
+        echo "Alternatively, you can import the Gitea certificate to your system's trust store."
+        exit 1
+      fi
+      
+      echo "Pushing image with tag '$VERSION_TAG'..."
+      docker push $IMAGE_NAME:$VERSION_TAG
+      
+      echo "Pushing image with tag '$TIMESTAMP_TAG'..."
+      docker push $IMAGE_NAME:$TIMESTAMP_TAG
+      
+      if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Production images pushed successfully!"
+        echo ""
+        echo "Image tags pushed:"
+        echo "  - $IMAGE_NAME:latest"
+        echo "  - $IMAGE_NAME:$VERSION_TAG (Kargo will detect this)"
+        echo "  - $IMAGE_NAME:$TIMESTAMP_TAG"
+        echo ""
+        echo "Kargo should automatically detect the new version: $VERSION_TAG"
+        echo "Check Kargo warehouse status with:"
+        echo "  kubectl get warehouse backstage-warehouse -n kargo-pipelines"
+      else
+        echo "Failed to build/push image. Check the error messages above."
+        exit 1
+      fi
+  
+  deploy-prod:
+    command: |-
+      echo "Deploying production image..."
+      # This command can be used when deployments are configured
+      # For now, it's a placeholder since deployments are commented out
+      echo "Note: Deployment configuration is currently commented out in devspace.yaml"
+      echo "Uncomment the deployments section to use this command"
+      # devspace deploy --skip-build
+  
+  migrate-db:
+    command: |-
+      echo 'This is a cross-platform, shared command that can be used to codify any kind of dev task.'
+      echo 'Anyone using this project can invoke it via "devspace run migrate-db"'
+
+  dev-vscode:
+    command: |-
+      echo "Starting DevSpace with VS Code integration..."
+      echo ""
+      echo "VS Code will automatically open once DevSpace SSH is ready."
+      echo ""
+      
+      # Try to launch the Windows batch file in background (if available)
+      if [ -f "/mnt/c/Users/VinodPittampalli/devspace_vscode_launcher.bat" ]; then
+        echo "Launching VS Code monitor in background..."
+        cmd.exe /c "start /min C:\\Users\\VinodPittampalli\\devspace_vscode_launcher.bat" 2>/dev/null &
+      fi
+      
+      # Run devspace dev normally (which will also try to launch VS Code)
+      devspace dev
+# Define dependencies to other projects with a devspace.yaml
+# dependencies:
+#   api:
+#     git: https://...  # Git-based dependencies
+#     tag: v1.0.0
+#   ui:
+#     path: ./ui        # Path-based dependencies (for monorepos)

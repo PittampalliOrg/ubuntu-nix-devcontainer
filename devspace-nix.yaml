@@ -1,0 +1,21 @@
+# DevSpace profile patch for using Nix-enabled image
+# Apply with: devspace dev --profile nix
+
+profiles:
+- name: nix
+  description: Use Nix-enabled development image
+  patches:
+  - op: replace
+    path: images.app
+    value:
+      image: backstage-nix-dev
+      dockerfile: ./Dockerfile.nix-dev
+      rebuildStrategy: always
+      tags:
+        - latest
+  - op: replace
+    path: deployments.backstage-dev.helm.values.image
+    value:
+      repository: backstage-nix-dev
+      tag: latest
+      pullPolicy: Never  # Use local image
