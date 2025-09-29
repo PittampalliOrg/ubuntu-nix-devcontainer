@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backstage-nix:
+    build:
+      context: .
+      dockerfile: Dockerfile.backstage-nix
+    image: backstage-nix:latest
+    container_name: backstage-nix-dev
+    volumes:
+      # Mount the Backstage source code
+      - ../backstage-cnoe:/workspace:rw
+      # Persist Nix store
+      - nix-store:/nix
+      # Persist node modules (optional, for faster rebuilds)
+      - node-modules:/workspace/node_modules
+    environment:
+      - NODE_ENV=development
+      - LOG_LEVEL=debug
+    ports:
+      - "3000:3000"  # Frontend
+      - "7007:7007"  # Backend
+    networks:
+      - backstage-dev
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+
+volumes:
+  nix-store:
+    driver: local
+  node-modules:
+    driver: local
+
+networks:
+  backstage-dev:
+    driver: bridge

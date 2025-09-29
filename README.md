@@ -2,20 +2,42 @@
 
 A Docker image providing Ubuntu 24.04 with Nix package manager for development environments, optimized for DevSpace and Kubernetes deployments.
 
+## 🔧 Permission Fixes Applied
+
+The Docker configurations have been updated to fix permission issues when using with DevSpace:
+
+### Key Improvements:
+- **Enhanced Directory Permissions**: Added `/workspace` directory with 775 permissions and sticky bit
+- **DevSpace Sync Compatibility**: Fixed file sync permission errors
+- **Auto-permission Repair**: Entrypoint script automatically fixes permissions on container start
+- **Dual Dockerfile Support**: Added `Dockerfile.backstage-nix` optimized for Backstage development
+- **Home-manager Integration**: Automatically runs `nix run home-manager -- switch --flake github:vpittamp/nixos-config#code` on startup
+- **Conflict Resolution**: Removes `.bashrc` and `.profile` files that prevent home-manager builds
+
 ## Features
 
-- **Base**: Ubuntu 24.04 LTS (Noble Numbat)
-- **Nix**: Version 2.31.1 installed in single-user mode
-- **Non-root user**: Runs as user `code` (UID 1001, GID 100)
-- **DevSpace compatible**: Pre-configured `/home/code/app` directory with correct permissions
-- **Development ready**: Includes git, curl, build-essential, and sudo access
+- **Base**: Ubuntu 24.04 LTS (Noble Numbat) or Node.js 20 (Backstage variant)
+- **Nix**: Latest version installed in single-user mode
+- **Non-root user**: Runs as user `code` (UID 1001) or `node` (UID 1000)
+- **DevSpace compatible**: Pre-configured `/workspace` and `/home/code/app` directories with correct permissions
+- **Development ready**: Includes git, curl, build-essential, sudo access, and development tools
 
 ## Quick Start
 
-### Build the image
+### Build the images
 
 ```bash
+# Build basic Ubuntu + Nix image
 docker build -t ubuntu-nix-nonroot:latest .
+
+# Build Backstage + Nix optimized image
+docker build -f Dockerfile.backstage-nix -t backstage-nix:latest .
+
+# Or use the build script
+./build-nix-image.sh
+
+# Or use docker-compose
+docker-compose build
 ```
 
 ### Run the container
@@ -26,21 +48,61 @@ docker run -it --rm ubuntu-nix-nonroot:latest bash
 
 ### Use with DevSpace
 
-The image is designed to work seamlessly with DevSpace file synchronization. The `/home/code/app` directory is pre-created with correct ownership to prevent permission issues.
+The images are designed to work seamlessly with DevSpace file synchronization. Both `/workspace` and `/home/code/app` directories are pre-created with correct ownership to prevent permission issues.
 
 ```yaml
-# devspace.yaml example
-images:
-  app:
-    image: ubuntu-nix-nonroot
-    dockerfile: ./Dockerfile
-
+# devspace.yaml example for Backstage development
 dev:
   app:
-    imageSelector: ubuntu-nix-nonroot
+    namespace: backstage
+    labelSelector:
+      app: backstage-dev
+    container: backstage
+
+    # Use the optimized Backstage + Nix image
+    devImage: backstage-nix:latest
+
+    # Override resources for development
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+
+    # Sync configuration
     sync:
-      - path: ./:/home/code/app
+      - path: ./:/workspace
+        excludePaths:
+        - node_modules/
+        - .git/
+        - dist/
 ```
+
+## Home-manager Configuration
+
+The containers automatically initialize home-manager with the configuration from `github:vpittamp/nixos-config#code` on first startup. This provides:
+- Custom shell environment (bash, zsh configurations)
+- Development tools and utilities
+- AI CLI tools (claude, gemini, codex, aichat)
+- Personalized dotfiles
+
+### Manual Initialization
+If home-manager doesn't initialize automatically, you can run it manually:
+```bash
+# Inside the container
+./init-home-manager.sh
+
+# Or directly
+nix run home-manager -- switch --flake github:vpittamp/nixos-config#code --impure
+```
+
+### Troubleshooting Home-manager
+If you encounter errors during home-manager initialization:
+1. **Conflicting files**: The container automatically removes `.bashrc`, `.profile`, and `.bash_profile` to prevent conflicts
+2. **Network issues**: Ensure the container has internet access to fetch the flake from GitHub
+3. **Permission issues**: The initialization runs as the container user (node/code) with proper permissions
 
 ## Nix Usage
 

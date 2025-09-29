@@ -12,7 +12,7 @@ NC='\033[0m' # No Color
 # Docker Hub configuration
 DOCKER_HUB_USER="vpittamp23"
 IMAGE_NAME="ubuntu-nix-backstage"
-VERSION="v7"  # Interactive entrypoint with visible home-manager init
+VERSION="v11"  # Fixed nixbld user conflicts
 
 echo -e "${GREEN}Building Backstage with Nix and Home-manager support...${NC}"
 echo ""
