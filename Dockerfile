@@ -114,14 +114,39 @@ export NODE_OPTIONS="--max-old-space-size=16384"\n\
 export YARN_CACHE_FOLDER="/home/code/.cache/yarn"\n\
 export npm_config_cache="/home/code/.cache/npm"\n\
 \n\
-# Remove conflicting files that might prevent home-manager from working later\n\
-rm -f /home/code/.bashrc /home/code/.profile /home/code/.bash_profile 2>/dev/null || true\n\
-\n\
-echo ""\n\
-echo "✨ Container ready!"\n\
-echo "To initialize home-manager, run:"\n\
-echo "  nix run home-manager -- switch --flake github:vpittamp/nixos-config#code --impure"\n\
-echo ""\n\
+# Setup home-manager if not already initialized\n\
+if [ ! -f /home/code/.config/home-manager/.initialized ]; then\n\
+    echo ""\n\
+    echo "✨ Container ready! Initializing home-manager..."\n\
+    echo ""\n\
+    \n\
+    # Clean up any existing nix profile packages to avoid conflicts\n\
+    if nix profile list 2>/dev/null | grep -q "home-manager-path"; then\n\
+        echo "🗑️  Cleaning up existing nix profile packages..."\n\
+        nix profile remove home-manager-path 2>/dev/null || true\n\
+    fi\n\
+    \n\
+    # Remove pre-existing shell config files that would conflict with home-manager\n\
+    echo "🧹 Removing pre-existing shell config files..."\n\
+    rm -f /home/code/.bashrc /home/code/.profile /home/code/.bash_profile 2>/dev/null || true\n\
+    \n\
+    # Initialize home-manager configuration\n\
+    echo "🏠 Activating home-manager configuration..."\n\
+    if nix run home-manager -- switch --flake github:vpittamp/nixos-config#code --impure; then\n\
+        echo "✅ Home-manager activated successfully!"\n\
+        mkdir -p /home/code/.config/home-manager\n\
+        touch /home/code/.config/home-manager/.initialized\n\
+    else\n\
+        echo "⚠️  Home-manager activation failed. You can retry manually with:"\n\
+        echo "  curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/main/scripts/codespaces-setup.sh | bash"\n\
+    fi\n\
+    echo ""\n\
+else\n\
+    echo ""\n\
+    echo "✨ Container ready! Home-manager already initialized."\n\
+    echo "To update: curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/main/scripts/codespaces-setup.sh | bash"\n\
+    echo ""\n\
+fi\n\
 \n\
 # Execute the provided command or start bash\n\
 if [ "$#" -eq 0 ]; then\n\
@@ -131,8 +156,8 @@ else\n\
 fi' > /home/code/entrypoint.sh && \
     chmod +x /home/code/entrypoint.sh
 
-# Remove conflicting files that prevent home-manager from working
-RUN rm -f /home/code/.bashrc /home/code/.profile /home/code/.bash_profile
+# Don't pre-create shell config files - let home-manager manage them
+# Home-manager will create these files with the correct configuration
 
 # Set working directory to /workspace for DevSpace
 WORKDIR /workspace

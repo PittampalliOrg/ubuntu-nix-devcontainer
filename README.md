@@ -11,8 +11,9 @@ The Docker configurations have been updated to fix permission issues when using 
 - **DevSpace Sync Compatibility**: Fixed file sync permission errors
 - **Auto-permission Repair**: Entrypoint script automatically fixes permissions on container start
 - **Dual Dockerfile Support**: Added `Dockerfile.backstage-nix` optimized for Backstage development
-- **Home-manager Integration**: Automatically runs `nix run home-manager -- switch --flake github:vpittamp/nixos-config#code` on startup
-- **Conflict Resolution**: Removes `.bashrc` and `.profile` files that prevent home-manager builds
+- **Home-manager Integration**: Automatically runs `nix run home-manager -- switch --flake github:vpittamp/nixos-config#code` on startup (only once)
+- **Nix Profile Conflict Prevention**: Automatically cleans up conflicting nix profile packages before home-manager activation
+- **Idempotent Setup**: Won't re-run home-manager if already initialized (checks for `.initialized` marker)
 
 ## Features
 
@@ -100,9 +101,14 @@ nix run home-manager -- switch --flake github:vpittamp/nixos-config#code --impur
 
 ### Troubleshooting Home-manager
 If you encounter errors during home-manager initialization:
-1. **Conflicting files**: The container automatically removes `.bashrc`, `.profile`, and `.bash_profile` to prevent conflicts
+1. **Nix profile conflicts**: The container automatically detects and removes conflicting `home-manager-path` packages
 2. **Network issues**: Ensure the container has internet access to fetch the flake from GitHub
-3. **Permission issues**: The initialization runs as the container user (node/code) with proper permissions
+3. **Permission issues**: The initialization runs as the container user (code) with proper permissions
+4. **Re-initialization**: To force re-run, delete `/home/code/.config/home-manager/.initialized` and restart the container
+5. **Manual cleanup**: Use the automated setup script:
+   ```bash
+   curl -L https://raw.githubusercontent.com/vpittamp/nixos-config/main/scripts/codespaces-setup.sh | bash
+   ```
 
 ## Nix Usage
 
